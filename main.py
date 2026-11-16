@@ -16,11 +16,10 @@ def human_size(value: int) -> str:
 def scan(root: Path, output: Path, max_files: int):
     largest, top_level, errors = [], [], 0
     output_resolved = output.resolve()
-    def visit(path: Path) -> int:
+    def visit(path: Path, depth: int = 0) -> int:
         nonlocal errors
         try:
-            if path.is_symlink(): return 0
-            if path.resolve() == output_resolved: return 0
+            if path.is_symlink() or path.resolve() == output_resolved: return 0
             if path.is_file():
                 size = path.stat().st_size
                 largest.append((size, path))
@@ -31,20 +30,14 @@ def scan(root: Path, output: Path, max_files: int):
                 for entry in entries:
                     child = Path(entry.path)
                     if child.name in SKIP_DIRS: continue
-                    total += visit(child)
+                    child_size = visit(child, depth + 1)
+                    total += child_size
+                    if depth == 0: top_level.append((child_size, child.name))
             return total
-        except (OSError, PermissionError):
+        except OSError:
             errors += 1
             return 0
     total = visit(root)
-    try:
-        with os.scandir(root) as entries:
-            for entry in entries:
-                child = Path(entry.path)
-                if child.name in SKIP_DIRS: continue
-                top_level.append((visit(child), child.name))
-    except OSError:
-        errors += 1
     largest.sort(key=lambda item: item[0], reverse=True)
     top_level.sort(reverse=True)
     return total, top_level, largest[:max_files], errors
